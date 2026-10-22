@@ -27,9 +27,14 @@ class PiCar:
 
     MOCK_CAR_CONFIG_FILE_NAME = "MOCK_CAR_CONFIG.txt"
 
-    SERVO_NOD = 0
+    # jdf hack 10/28
+    # new car has flipped these
+    #SERVO_NOD = 0
+    #SERVO_SWIVEL = 1
+    #SERVO_STEER = 2
+    SERVO_NOD = 2
     SERVO_SWIVEL = 1
-    SERVO_STEER = 2
+    SERVO_STEER = 0
 
     # Class Variables
     _simulated_hardware = None
@@ -104,7 +109,9 @@ class PiCar:
             # specify default pins for real hardware
             if pins is not None:
                 print("Custom pins overridden - not allowed when mock_car is False")
-            pins = (11, 13, 12, 0, 1, 2, 23, 24)
+            # jdf hack 10/28
+            # pins = (11, 13, 12, 0, 1, 2, 23, 24)
+            pins = (41, 43, 42, 2, 1, 0, 15, 16)
         self._init_pins(pins)
 
         if self._simulated_hardware:
@@ -132,17 +139,20 @@ class PiCar:
         print("initializing software SPI")
         # initialize software SPI
         gpio_adapter = Adafruit_GPIO_Adapter(GPIO, mode=GPIO.BOARD)
-        clk_pin = 40
+
+        # jdf hack 10/28
+        #clk_pin = 40
+        #miso_pin = 21
+        #mosi_pin = 19
+        #cs_pin = 26
+        clk_pin = 23
         miso_pin = 21
         mosi_pin = 19
-        cs_pin = 26
+        cs_pin = 24
 
         self.adc = Adafruit_MCP3008.MCP3008(
             clk=clk_pin, cs=cs_pin, miso=miso_pin, mosi=mosi_pin, gpio=gpio_adapter
         )
-
-        # intialize the MPU6050
-        self._MPU_Init()
 
         print("looking for servo configuration file...")
 
@@ -220,16 +230,27 @@ class PiCar:
             self._ultrasonic_echo,
         ) = pins
 
+        # jdf hack 10/28
         # setup motor pins
-        GPIO.setup(self._motor_enable, GPIO.OUT, initial=GPIO.LOW)
-        GPIO.setup(self._motor_pin_1, GPIO.OUT, initial=GPIO.LOW)
-        GPIO.setup(self._motor_pin_2, GPIO.OUT, initial=GPIO.LOW)
+        #GPIO.setup(self._motor_enable, GPIO.OUT, initial=GPIO.LOW)
+        #GPIO.setup(self._motor_pin_1, GPIO.OUT, initial=GPIO.LOW)
+        #GPIO.setup(self._motor_pin_2, GPIO.OUT, initial=GPIO.LOW)
 
         # setup servo pins
+        #if self._simulated_hardware:
+        #    GPIO.setup(self._servo_nod_pin, GPIO.OUT)
+        #    GPIO.setup(self._servo_swivel_pin, GPIO.OUT)
+        #    GPIO.setup(self._servo_steer_pin, GPIO.OUT)
+        # setup motor pins
+
+        # setup servo pins and motor pins only on simulated hardware
         if self._simulated_hardware:
             GPIO.setup(self._servo_nod_pin, GPIO.OUT)
             GPIO.setup(self._servo_swivel_pin, GPIO.OUT)
             GPIO.setup(self._servo_steer_pin, GPIO.OUT)
+            GPIO.setup(self._motor_enable, GPIO.OUT, initial=GPIO.LOW)
+            GPIO.setup(self._motor_pin_1, GPIO.OUT, initial=GPIO.LOW)
+            GPIO.setup(self._motor_pin_2, GPIO.OUT, initial=GPIO.LOW)
 
         # setup ultrasonic pins
         GPIO.setup(self._ultrasonic_trigger, GPIO.OUT, initial=GPIO.LOW)
@@ -261,25 +282,64 @@ class PiCar:
         Initialize car variables for use with the actual Adeept Car
         """
         self._servo_global_pwm = PWM_HAT.PCA9685()
-        self._servo_global_pwm.set_pwm_freq(60)
+        # jdf hack 10/28
+        #self._servo_global_pwm.set_pwm_freq(60)
+        self._servo_global_pwm.set_pwm_freq(50)
 
-        self._motor_pwm = GPIO.PWM(self._motor_enable, 1000)
-        self._motor_pwm.start(0)
+        #self._motor_pwm = GPIO.PWM(self._motor_enable, 1000)
+        #self._motor_pwm.start(0)
+        self._motor_pwm = self._servo_global_pwm
+        
+        # intialize the IMU20948
+        self._MPU_Init()
 
         pass
 
-    def set_motor(self, duty_cycle, forward=True):
-        """
-        forward (bool):direction of motor spin
-        duty_cycle (int): 0->100
-        """
-        duty_cycle = duty_cycle if duty_cycle < 100 else 100
-        duty_cycle = duty_cycle if duty_cycle >= 0 else 0
-        GPIO.output(self._motor_pin_1, GPIO.LOW if forward else GPIO.HIGH)
-        GPIO.output(self._motor_pin_2, GPIO.HIGH if forward else GPIO.LOW)
-        self._motor_pwm.ChangeDutyCycle(duty_cycle)
-        self.motor_state = duty_cycle
+   def set_motor(self, duty_cycle, forward=True, mode=0,
+              left_duty_cycle=None, right_duty_cycle=None):
+    """
+    Controls left and right motors using PWM channels:
+        Left motor:  12, 13
+        Right motor: 14, 15
 
+    Parameters:
+        duty_cycle: Duty cycle (%) for both motors in mode 0
+        forward: True for forward, False for backward
+        mode: 0 = same duty cycle (default)
+              1 = independent duty cycles
+        left_duty_cycle: Left motor duty cycle (%) in mode 1
+        right_duty_cycle: Right motor duty cycle (%) in mode 1
+    """
+
+    # Determine duty cycles
+    if mode == 0:
+        left_duty_cycle = duty_cycle
+        right_duty_cycle = duty_cycle
+
+    elif mode == 1:
+        if left_duty_cycle is None or right_duty_cycle is None:
+            raise ValueError("Specify both duty cycles in mode 1")
+
+    else:
+        raise ValueError("mode must be 0 or 1")
+
+    # Convert duty cycle (%) to 12-bit PWM value
+    left_duty = int(max(0, min(100, left_duty_cycle)) * 4095 / 100)
+    right_duty = int(max(0, min(100, right_duty_cycle)) * 4095 / 100)
+
+    # Set motor directions and PWM
+    if forward:
+        self._motor_pwm.set_pwm(12, 0, 0)
+        self._motor_pwm.set_pwm(13, 0, left_duty)
+        self._motor_pwm.set_pwm(14, 0, right_duty)
+        self._motor_pwm.set_pwm(15, 0, 0)
+
+    else:
+        self._motor_pwm.set_pwm(12, 0, left_duty)
+        self._motor_pwm.set_pwm(13, 0, 0)
+        self._motor_pwm.set_pwm(14, 0, 0)
+        self._motor_pwm.set_pwm(15, 0, right_duty)
+        
     def reset(self):
         """
         Reset the hardware - will set all motors and servos to neutral positions
@@ -294,19 +354,34 @@ class PiCar:
         """
         Stop the hardware - will kill PWM instance for all motors and servos, and cleanup GPIO
         """
-        self._motor_pwm.stop()
+        
+        # jdf hack 10/28
+        #self._motor_pwm.stop()
+        #if self._simulated_hardware:
+        #    self._servo_nod_pwm.stop()
+        #    self._servo_swivel_pwm.stop()
+        #    self._servo_steer_pwm.stop()
         if self._simulated_hardware:
             self._servo_nod_pwm.stop()
             self._servo_swivel_pwm.stop()
             self._servo_steer_pwm.stop()
-
-        GPIO.cleanup()
+            self._motor_pwm.stop()
+        else :
+            self._servo_global_pwm.set_pwm(2, 0, 0)
+            self._servo_global_pwm.set_pwm(1, 0, 0)
+            self._servo_global_pwm.set_pwm(0, 0, 0)
+            self._motor_pwm.set_pwm(12, 0, 0)
+            self._motor_pwm.set_pwm(13, 0, 0)
+            self._motor_pwm.set_pwm(14, 0, 0)
+            self._motor_pwm.set_pwm(15, 0, 0)
 
         if self._threaded:      # clean up the threads still active
             self._ultrasonic_process.stop_thread()
             self._camera_process.stop_thread()
             self._keyboard_process.stop_thread()
-            os.system('reset')
+        
+        GPIO.cleanup()
+        os.system('reset')
 
 
     def _calc_servo_duty_cycle(self, left, middle, right, amount, is_left):
@@ -629,70 +704,184 @@ class PiCar:
 
         return rep
     
-#    # ACCELEROMETER MPU-6050
-#    # Adapted from: https://www.electronicwings.com/raspberry-pi/mpu6050-accelerometergyroscope-interfacing-with-raspberry-pi
-    def _MPU_Init(self):
-        Device_Address = 0x68   # MPU6050 device address
-        PWR_MGMT_1     = 0x6B
-        SMPLRT_DIV     = 0x19
-        CONFIG         = 0x1A
-        GYRO_CONFIG    = 0x1B
-        INT_ENABLE     = 0x38
+   # MPU ICM20948
+    def _bank_select(self, bank):
+    #Switch ICM20948 register bank (0–3)
+        REG_BANK_SEL = 0x7F
+        self._bus.write_byte_data(self._device_address, REG_BANK_SEL, bank << 4)
 
-        #write to sample rate register
-        self._bus.write_byte_data(Device_Address, SMPLRT_DIV, 7)
-        #Write to power management register
-        self._bus.write_byte_data(Device_Address, PWR_MGMT_1, 1)
-        #Write to Configuration register
-        self._bus.write_byte_data(Device_Address, CONFIG, 0)
-        #Write to Gyro configuration register
-        self._bus.write_byte_data(Device_Address, GYRO_CONFIG, 24)
-        #Write to interrupt enable register
-        self._bus.write_byte_data(Device_Address, INT_ENABLE, 1)
+    def _MPU_Init(self):
+        self._device_address = 0x68   # 0x69 if AD0 pin is HIGH
+
+        # ------------------------------------------------------------------ #
+        #  Bank 0 — Power on and bypass setup                                 #
+        # ------------------------------------------------------------------ #
+        self._bank_select(0)
+
+        PWR_MGMT_1  = 0x06
+        PWR_MGMT_2  = 0x07
+        INT_PIN_CFG = 0x0F
+        INT_ENABLE  = 0x10
+        I2C_MST_EN  = 0x03   # bit in USER_CTRL to disable I2C master
+
+        USER_CTRL   = 0x03
+
+        # Step 1 — Wake device, auto-select clock (clears SLEEP bit)
+        self._bus.write_byte_data(self._device_address, PWR_MGMT_1, 0x01)
+        time.sleep(0.1)
+
+        # Step 2 — Enable all accel + gyro axes
+        self._bus.write_byte_data(self._device_address, PWR_MGMT_2, 0x00)
+        time.sleep(0.05)
+
+        # Step 3 — CRITICAL: disable I2C master BEFORE enabling bypass
+        # If I2C master is active it "owns" the aux bus and bypass won't work
+        self._bus.write_byte_data(self._device_address, USER_CTRL, 0x00)  # I2C_MST_EN = 0
+        time.sleep(0.05)
+
+        # Step 4 — Enable bypass mode so AK09916 is visible on the main I2C bus
+        self._bus.write_byte_data(self._device_address, INT_PIN_CFG, 0x02)  # BYPASS_EN = 1
+        time.sleep(0.1)   # longer delay — give the bus time to switch over
+
+        # Step 5 — Enable data-ready interrupt
+        self._bus.write_byte_data(self._device_address, INT_ENABLE, 0x01)
+
+        # ------------------------------------------------------------------ #
+        #  Verify AK09916 is reachable before configuring it                  #
+        # ------------------------------------------------------------------ #
+        AK09916_ADDR = 0x0C
+        AK09916_WIA2 = 0x01   # "Who I Am" register — should return 0x09
+
+        try:
+            who = self._bus.read_byte_data(AK09916_ADDR, AK09916_WIA2)
+            if who != 0x09:
+                raise RuntimeError(f"AK09916 WIA2 returned 0x{who:02X}, expected 0x09")
+            print(f"AK09916 detected OK (WIA2=0x{who:02X})")
+        except OSError as e:
+            raise RuntimeError(
+                "AK09916 not found on I2C bus. "
+                "Check bypass wiring or confirm AD0 pin level (try address 0x69)."
+            ) from e
+
+        # ------------------------------------------------------------------ #
+        #  Configure AK09916                                                   #
+        # ------------------------------------------------------------------ #
+        AK09916_CNTL3           = 0x32   # soft reset
+        AK09916_CNTL2           = 0x31   # operating mode
+        AK09916_CONT_MODE_100HZ = 0x08   # continuous mode 4, 100 Hz
+
+        # Soft-reset magnetometer
+        self._bus.write_byte_data(AK09916_ADDR, AK09916_CNTL3, 0x01)
+        time.sleep(0.1)
+
+        # Set continuous measurement at 100 Hz
+        self._bus.write_byte_data(AK09916_ADDR, AK09916_CNTL2, AK09916_CONT_MODE_100HZ)
+        time.sleep(0.05)
+
+        # ------------------------------------------------------------------ #
+        #  Bank 2 — Gyroscope and Accelerometer configuration                 #
+        # ------------------------------------------------------------------ #
+        self._bank_select(2)
+
+        GYRO_SMPLRT_DIV  = 0x00
+        GYRO_CONFIG_1    = 0x01
+        ACCEL_SMPLRT_DIV = 0x10
+        ACCEL_CONFIG     = 0x14
+
+        # Gyro sample rate ≈ 100 Hz
+        self._bus.write_byte_data(self._device_address, GYRO_SMPLRT_DIV, 0x0A)
+        # Gyro: ±2000 °/s + DLPF enabled
+        self._bus.write_byte_data(self._device_address, GYRO_CONFIG_1, 0x19)
+
+        # Accel sample rate ≈ 100 Hz
+        self._bus.write_byte_data(self._device_address, ACCEL_SMPLRT_DIV,     0x00)
+        self._bus.write_byte_data(self._device_address, ACCEL_SMPLRT_DIV + 1, 0x0A)
+        # Accel: ±2g + DLPF enabled
+        self._bus.write_byte_data(self._device_address, ACCEL_CONFIG, 0x01)
+
+        # Return to Bank 0 as default
+        self._bank_select(0)
 
     def MPU_Read(self, val2read):
-        # 1-xaccel, 2-yaccel, 3-zaccel, 4-xgyro, 5-ygyro, 6-zgyro
-        #some MPU6050 Registers and their Address
-        Device_Address = 0x68   # MPU6050 device address
-        ACCEL_XOUT_H = 0x3B
-        ACCEL_YOUT_H = 0x3D
-        ACCEL_ZOUT_H = 0x3F
-        GYRO_XOUT_H  = 0x43
-        GYRO_YOUT_H  = 0x45
-        GYRO_ZOUT_H  = 0x47
+        """
+        Read a single sensor axis from ICM20948 or AK09916.
 
-        addr = ACCEL_XOUT_H
+        val2read:
+            1 – accel X  (g)
+            2 – accel Y  (g)
+            3 – accel Z  (g)
+            4 – gyro  X  (°/s)
+            5 – gyro  Y  (°/s)
+            6 – gyro  Z  (°/s)
+            7 – mag   X  (µT)
+            8 – mag   Y  (µT)
+            9 – mag   Z  (µT)
+        """
+        if not (1 <= val2read <= 9):
+            raise ValueError(f"Invalid val2read: {val2read}. Must be 1–9.")
 
-        if (val2read == 1):
-            addr = ACCEL_XOUT_H
-        elif (val2read == 2):
-            addr = ACCEL_YOUT_H
-        elif (val2read == 3):
-            addr = ACCEL_ZOUT_H
-        elif (val2read == 4):
-            addr = GYRO_XOUT_H
-        elif (val2read == 5):
-            addr = GYRO_YOUT_H
-        elif (val2read == 6):
-            addr = GYRO_ZOUT_H
+        # ------------------------------------------------------------------ #
+        #  Accelerometer / Gyroscope  (ICM20948, Bank 0, big-endian)          #
+        # ------------------------------------------------------------------ #
+        if val2read <= 6:
+            ACCEL_XOUT_H = 0x2D
+            GYRO_XOUT_H  = 0x33
 
-        #Accelero and Gyro value are 16-bit
-        high = self._bus.read_byte_data(Device_Address, addr)
-        low  = self._bus.read_byte_data(Device_Address, addr+1)
-    
-        #concatenate higher and lower value
-        value = ((high << 8) | low)
-        #to get signed value from mpu6050
-        if(value > 32768):
-            value = value - 65536
-   
-        if (val2read < 4):   # accel reading
-            value = value/16384.0
-        else:                # gyro reading
-            value = value/131.0
-      
-        return value    
-        
+            self._bank_select(0)
+
+            if   val2read == 1: addr = ACCEL_XOUT_H
+            elif val2read == 2: addr = ACCEL_XOUT_H + 2
+            elif val2read == 3: addr = ACCEL_XOUT_H + 4
+            elif val2read == 4: addr = GYRO_XOUT_H
+            elif val2read == 5: addr = GYRO_XOUT_H + 2
+            elif val2read == 6: addr = GYRO_XOUT_H + 4
+
+            # Big-endian: high byte first
+            high  = self._bus.read_byte_data(self._device_address, addr)
+            low   = self._bus.read_byte_data(self._device_address, addr + 1)
+            value = (high << 8) | low
+
+            # Two's complement → signed
+            if value > 32767:
+                value -= 65536
+
+            # Scale using configured full-scale ranges:
+            #   Accel ±2g      → 16384 LSB/g
+            #   Gyro  ±2000°/s →    16.4 LSB/(°/s)
+            if val2read <= 3:
+                return value / 16384.0   # g
+            else:
+                return value / 16.4      # °/s
+
+        # ------------------------------------------------------------------ #
+        #  Magnetometer  (AK09916, address 0x0C, little-endian)               #
+        # ------------------------------------------------------------------ #
+        else:
+            AK09916_ADDR = 0x0C
+            HXL = 0x11   # Mag X low byte
+            HYL = 0x13   # Mag Y low byte
+            HZL = 0x15   # Mag Z low byte
+            ST2 = 0x18   # Status 2 — must be read after data to unlatch next sample
+
+            if   val2read == 7: addr = HXL
+            elif val2read == 8: addr = HYL
+            elif val2read == 9: addr = HZL
+
+            # Little-endian: low byte first
+            low   = self._bus.read_byte_data(AK09916_ADDR, addr)
+            high  = self._bus.read_byte_data(AK09916_ADDR, addr + 1)
+            value = (high << 8) | low
+
+            # Two's complement → signed
+            if value > 32767:
+                value -= 65536
+
+            # Read ST2 to release the data latch — required by AK09916 datasheet
+            self._bus.read_byte_data(AK09916_ADDR, ST2)
+
+            # Fixed sensitivity: 0.15 µT/LSB (AK09916 has no configurable range)
+            return value * 0.15   # µT
+            
 def compute_column_lengths(data):
     lengths = []
     index = 0
