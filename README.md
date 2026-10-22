@@ -18,7 +18,7 @@ PiCar assumes specific wiring of your components for use in simulated hardware m
 # Installation
 The following will install the package and all dependencies:
 ```bash
-pip3 install git+https://github.com/ESE205/PiCar
+pip3 install git+https://github.com/ESE2050/PiCar
 ```
 
 You can verify you have the module installed via the following command:
