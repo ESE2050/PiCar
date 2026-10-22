@@ -1,15 +1,13 @@
+
 import RPi.GPIO as GPIO
 import time
-
 import Adafruit_PCA9685 as PWM_HAT
 from Adafruit_GPIO.GPIO import RPiGPIOAdapter as Adafruit_GPIO_Adapter
 import Adafruit_MCP3008
-
-from picar.CarProcesses import ps_image_stream 
+from picar.CarProcesses import ps_image_stream
 from picar.CarProcesses import ps_ultrasonic_dist
 from picar.CarProcesses import ps_keyboard
 from picar.ParallelTask import ParallelTask
-
 import pkg_resources
 import os.path
 import os
@@ -17,14 +15,14 @@ import smbus
 
 GPIO.setwarnings(False)    # Ignore warning for now
 
+
 class PiCar:
     """
-    Class to interface with PiCar Hardware 
+    Class to interface with PiCar Hardware
     """
 
     # Global Variables
     PICAR_CONFIG_FILE_NAME = "PICAR_CONFIG.txt"
-
     MOCK_CAR_CONFIG_FILE_NAME = "MOCK_CAR_CONFIG.txt"
 
     # jdf hack 10/28
@@ -38,36 +36,22 @@ class PiCar:
 
     # Class Variables
     _simulated_hardware = None
-
     _motor_enable, _motor_pin_1, _motor_pin_2, _motor_pwm = (None, None, None, None)
-
     motor_state = 0
-
     _servo_global_pwm = None
-
     _servo_nod_pin, _servo_nod_pwm = (None, None)
     _servo_nod_left, _servo_nod_middle, _servo_nod_right = (290, 310, 330)
-
     nod_servo_state = 0
-
     _servo_swivel_pin, _servo_swivel_pwm = (None, None)
     _servo_swivel_left, _servo_swivel_middle, _servo_swivel_right = (290, 310, 330)
-
     swivel_servo_state = 0
-
     _servo_steer_pin, _servo_steer_pwm = (None, None)
     _servo_steer_left, _servo_steer_middle, _servo_steer_right = (290, 310, 330)
-
     steer_servo_state = 0
-
     _ultrasonic_trigger, _ultrasonic_echo = (None, None)
-
     _threaded = None
-
     _camera_process, _ultrasonic_process, _keyboard_process = (None, None, None)
-
     adc = None
-    
     _bus = smbus.SMBus(1)
 
     def __init__(self, mock_car=True, pins=None, config_name=None, threaded=False):
@@ -79,48 +63,44 @@ class PiCar:
         mock_car (bool): True for simulated hardware, False to run on actual PiCar
         pins (tuple): List of Custom pins to be used in simulated hardware, in following order:
             (motor_enable, motor_pin_1, motor_pin_2, servo_nod, servo_swivel, servo_steer, ultrasonic_trigger, ultrasonic_echo)
+        On mock hardware, all 8 entries are BCM GPIO numbers.
+        On real hardware, the first 3 entries are motor placeholders, the next 3 are PCA9685 servo channels, and the last 2 are BCM GPIO numbers.
         config_name (String): path to servo configuration file
         threaded (bool): whether the program should run threaded or not
         """
-
         print("initializing PiCar...")
-
         if mock_car:
             print("PiCar mode set to MOCK_CAR")
         else:
             print("PiCar mode set to REAL_CAR")
-
         self._simulated_hardware = mock_car
 
-        GPIO.setmode(GPIO.BOARD)
+        GPIO.setmode(GPIO.BCM)
 
         print("configuring pins...")
-
         if pins is not None and mock_car is True:
-            # default pins modified, validate custom pins
+            # Validate custom BCM GPIO pins
             if len(pins) != 8:
                 raise SystemExit(
                     f"Invalid number of pins supplied: expected 8, found {len(pins)}"
                 )
         elif mock_car is True:
-            # specify default pins for mock hardware
-            pins = (31, 33, 35, 11, 13, 15, 16, 18)
+            # Default Raspberry Pi GPIO pins in BCM numbering for mock hardware
+            pins = (6, 13, 19, 17, 27, 22, 23, 24)
         else:
-            # specify default pins for real hardware
+            # The first 3 are unused placeholders, the next 3 PCA9685 servo channels, and the last 2 BCM GPIOs
             if pins is not None:
                 print("Custom pins overridden - not allowed when mock_car is False")
-            # jdf hack 10/28
-            # pins = (11, 13, 12, 0, 1, 2, 23, 24)
-            pins = (41, 43, 42, 2, 1, 0, 15, 16)
-        self._init_pins(pins)
+            # Real-car motors use PCA9685 PWM channels 12-15.
+            pins = (41, 43, 42, 2, 1, 0, 22, 23)
 
+        self._init_pins(pins)
         if self._simulated_hardware:
             self._init_mock_car()
         else:
             self._init_car()
 
         self._threaded = threaded
-
         if self._threaded:
             print("Program is running in THREADED MODE")
             print(
@@ -133,38 +113,31 @@ class PiCar:
             self._camera_process   = ParallelTask(ps_image_stream, ((640, 480), 15))
             self._ultrasonic_process = ParallelTask(
                 ps_ultrasonic_dist, (self._ultrasonic_echo, self._ultrasonic_trigger))
-            # give the camera a bit to wake up
-            time.sleep(1)
+
+        # give the camera a bit to wake up
+        time.sleep(1)
 
         print("initializing software SPI")
-        # initialize software SPI
-        gpio_adapter = Adafruit_GPIO_Adapter(GPIO, mode=GPIO.BOARD)
-
-        # jdf hack 10/28
-        #clk_pin = 40
-        #miso_pin = 21
-        #mosi_pin = 19
-        #cs_pin = 26
-        clk_pin = 23
-        miso_pin = 21
-        mosi_pin = 19
-        cs_pin = 24
+        # Configure MCP3008 software SPI using BCM pin numbering
+        gpio_adapter = Adafruit_GPIO_Adapter(GPIO, mode=GPIO.BCM)
+        # Software SPI wiring: physical 23, 21, 19, 24 -> GPIO 11, 9, 10, 8
+        clk_pin = 11
+        miso_pin = 9
+        mosi_pin = 10
+        cs_pin = 8
 
         self.adc = Adafruit_MCP3008.MCP3008(
             clk=clk_pin, cs=cs_pin, miso=miso_pin, mosi=mosi_pin, gpio=gpio_adapter
         )
 
         print("looking for servo configuration file...")
-
         if config_name is not None:
             print("config name overridden")
             self.MOCK_CAR_CONFIG_FILE_NAME = config_name
             self.PICAR_CONFIG_FILE_NAME = config_name
-
         print(
             f"looking for config file: ./{self.MOCK_CAR_CONFIG_FILE_NAME if mock_car else self.PICAR_CONFIG_FILE_NAME}"
         )
-
         if os.path.exists(
             self.MOCK_CAR_CONFIG_FILE_NAME if mock_car else self.PICAR_CONFIG_FILE_NAME
         ):
@@ -201,14 +174,11 @@ class PiCar:
             print("servo configuration not found, using default values")
 
         print("PiCar configured successfully")
-
         print(self)
-
         print("setting motors to default positions...")
 
         # set initial component states
         self.set_motor(0)
-
         self.set_nod_servo(0)
         self.set_swivel_servo(0)
         self.set_steer_servo(0)
@@ -216,9 +186,8 @@ class PiCar:
     def _init_pins(self, pins):
         """
         pins: List of pins to be configured for hardware, in following order:
-        (motor_pin_1, motor_pin_2, motor_enable, servo_nod, servo_swivel, servo_steer)
+        (motor_enable, motor_pin_1, motor_pin_2, servo_nod, servo_swivel, servo_steer, ultrasonic_trigger, ultrasonic_echo)
         """
-
         (
             self._motor_enable,
             self._motor_pin_1,
@@ -241,7 +210,6 @@ class PiCar:
         #    GPIO.setup(self._servo_nod_pin, GPIO.OUT)
         #    GPIO.setup(self._servo_swivel_pin, GPIO.OUT)
         #    GPIO.setup(self._servo_steer_pin, GPIO.OUT)
-        # setup motor pins
 
         # setup servo pins and motor pins only on simulated hardware
         if self._simulated_hardware:
@@ -260,7 +228,6 @@ class PiCar:
         """
         Initialize car variables for use with RPi Treated as Mock Car
         """
-
         self._servo_nod_pwm = GPIO.PWM(self._servo_nod_pin, 50)
         self._servo_swivel_pwm = GPIO.PWM(self._servo_swivel_pin, 50)
         self._servo_steer_pwm = GPIO.PWM(self._servo_steer_pin, 50)
@@ -282,6 +249,7 @@ class PiCar:
         Initialize car variables for use with the actual Adeept Car
         """
         self._servo_global_pwm = PWM_HAT.PCA9685()
+
         # jdf hack 10/28
         #self._servo_global_pwm.set_pwm_freq(60)
         self._servo_global_pwm.set_pwm_freq(50)
@@ -289,63 +257,58 @@ class PiCar:
         #self._motor_pwm = GPIO.PWM(self._motor_enable, 1000)
         #self._motor_pwm.start(0)
         self._motor_pwm = self._servo_global_pwm
-        
+
         # intialize the IMU20948
         self._MPU_Init()
-
         pass
 
-   def set_motor(self, duty_cycle, forward=True, mode=0,
-              left_duty_cycle=None, right_duty_cycle=None):
-    """
-    Controls left and right motors using PWM channels:
-        Left motor:  12, 13
-        Right motor: 14, 15
+    def set_motor(self, duty_cycle, forward=True, mode=0,
+                  left_duty_cycle=None, right_duty_cycle=None):
+        """
+        Controls left and right motors using PWM channels:
+            Left motor:  12, 13
+            Right motor: 14, 15
 
-    Parameters:
-        duty_cycle: Duty cycle (%) for both motors in mode 0
-        forward: True for forward, False for backward
-        mode: 0 = same duty cycle (default)
-              1 = independent duty cycles
-        left_duty_cycle: Left motor duty cycle (%) in mode 1
-        right_duty_cycle: Right motor duty cycle (%) in mode 1
-    """
+        Parameters:
+            duty_cycle: Duty cycle (%) for both motors in mode 0
+            forward: True for forward, False for backward
+            mode: 0 = same duty cycle (default)
+                  1 = independent duty cycles
+            left_duty_cycle: Left motor duty cycle (%) in mode 1
+            right_duty_cycle: Right motor duty cycle (%) in mode 1
+        """
 
-    # Determine duty cycles
-    if mode == 0:
-        left_duty_cycle = duty_cycle
-        right_duty_cycle = duty_cycle
+        # Determine duty cycles
+        if mode == 0:
+            left_duty_cycle = duty_cycle
+            right_duty_cycle = duty_cycle
+        elif mode == 1:
+            if left_duty_cycle is None or right_duty_cycle is None:
+                raise ValueError("Specify both duty cycles in mode 1")
+        else:
+            raise ValueError("mode must be 0 or 1")
 
-    elif mode == 1:
-        if left_duty_cycle is None or right_duty_cycle is None:
-            raise ValueError("Specify both duty cycles in mode 1")
+        # Convert duty cycle (%) to 12-bit PWM value
+        left_duty = int(max(0, min(100, left_duty_cycle)) * 4095 / 100)
+        right_duty = int(max(0, min(100, right_duty_cycle)) * 4095 / 100)
 
-    else:
-        raise ValueError("mode must be 0 or 1")
+        # Set motor directions and PWM
+        if forward:
+            self._motor_pwm.set_pwm(12, 0, 0)
+            self._motor_pwm.set_pwm(13, 0, left_duty)
+            self._motor_pwm.set_pwm(14, 0, right_duty)
+            self._motor_pwm.set_pwm(15, 0, 0)
+        else:
+            self._motor_pwm.set_pwm(12, 0, left_duty)
+            self._motor_pwm.set_pwm(13, 0, 0)
+            self._motor_pwm.set_pwm(14, 0, 0)
+            self._motor_pwm.set_pwm(15, 0, right_duty)
 
-    # Convert duty cycle (%) to 12-bit PWM value
-    left_duty = int(max(0, min(100, left_duty_cycle)) * 4095 / 100)
-    right_duty = int(max(0, min(100, right_duty_cycle)) * 4095 / 100)
-
-    # Set motor directions and PWM
-    if forward:
-        self._motor_pwm.set_pwm(12, 0, 0)
-        self._motor_pwm.set_pwm(13, 0, left_duty)
-        self._motor_pwm.set_pwm(14, 0, right_duty)
-        self._motor_pwm.set_pwm(15, 0, 0)
-
-    else:
-        self._motor_pwm.set_pwm(12, 0, left_duty)
-        self._motor_pwm.set_pwm(13, 0, 0)
-        self._motor_pwm.set_pwm(14, 0, 0)
-        self._motor_pwm.set_pwm(15, 0, right_duty)
-        
     def reset(self):
         """
         Reset the hardware - will set all motors and servos to neutral positions
         """
         self.set_motor(0)
-
         self.set_nod_servo(0)
         self.set_steer_servo(0)
         self.set_swivel_servo(0)
@@ -354,13 +317,13 @@ class PiCar:
         """
         Stop the hardware - will kill PWM instance for all motors and servos, and cleanup GPIO
         """
-        
         # jdf hack 10/28
         #self._motor_pwm.stop()
         #if self._simulated_hardware:
         #    self._servo_nod_pwm.stop()
         #    self._servo_swivel_pwm.stop()
         #    self._servo_steer_pwm.stop()
+
         if self._simulated_hardware:
             self._servo_nod_pwm.stop()
             self._servo_swivel_pwm.stop()
@@ -379,10 +342,9 @@ class PiCar:
             self._ultrasonic_process.stop_thread()
             self._camera_process.stop_thread()
             self._keyboard_process.stop_thread()
-        
+
         GPIO.cleanup()
         os.system('reset')
-
 
     def _calc_servo_duty_cycle(self, left, middle, right, amount, is_left):
         return (
@@ -401,6 +363,7 @@ class PiCar:
             raise SystemExit(
                 f"Invalid servo specified to set_servo. Expected one of PiCar.SERVO_NOD, PiCar.SERVO_SWIVEL, PiCar.SERVO_STEER"
             )
+
         # handle special input cases
         if raw:
             if servo == PiCar.SERVO_NOD:
@@ -413,6 +376,7 @@ class PiCar:
                 self._servo_global_pwm.set_pwm(self._servo_steer_pin, 0, raw)
                 self.nod_steer_state = raw
             return
+
         if not (isinstance(value, int) or isinstance(value, float)):
             raise SystemExit(
                 f"value argument must be numeric between -10 and 10. Expected int or float, found {type(value)}"
@@ -429,6 +393,7 @@ class PiCar:
 
         is_left, amount = (value < 0, abs(value))
         duty_cycle = None
+
         if servo == PiCar.SERVO_NOD:
             duty_cycle = self._calc_servo_duty_cycle(
                 self._servo_nod_left,
@@ -472,6 +437,7 @@ class PiCar:
                 self._servo_global_pwm.set_pwm(
                     self._servo_steer_pin, 0, int(duty_cycle)
                 )
+
         if servo == PiCar.SERVO_NOD:
             self.nod_servo_state = value
         elif servo == PiCar.SERVO_SWIVEL:
@@ -493,12 +459,14 @@ class PiCar:
             middle = self._servo_nod_middle
         if right is None:
             right = self._servo_nod_right
+
         if False in [
             isinstance(x, int) or isinstance(x, float) for x in (left, middle, right)
         ]:
             raise SystemExit(
                 f"All args must be integer values, expected int, int, int, found: {type(left)}, {type(middle)}, {type(right)}"
             )
+
         print(f"nod : {left} , {middle} , {right}")
         self._servo_nod_left = left
         self._servo_nod_middle = middle
@@ -525,12 +493,14 @@ class PiCar:
             middle = self._servo_swivel_middle
         if right is None:
             right = self._servo_swivel_right
+
         if False in [
             isinstance(x, int) or isinstance(x, float) for x in (left, middle, right)
         ]:
             raise SystemExit(
                 f"All args must be integer values, expected int, int, int, found: {type(left)}, {type(middle)}, {type(right)}"
             )
+
         print(f"swivel : {left} , {middle} , {right}")
         self._servo_swivel_left = left
         self._servo_swivel_middle = middle
@@ -557,6 +527,7 @@ class PiCar:
             middle = self._servo_steer_middle
         if right is None:
             right = self._servo_steer_right
+
         if False in [
             isinstance(x, int) or isinstance(x, float) for x in (left, middle, right)
         ]:
@@ -571,9 +542,9 @@ class PiCar:
 
     def set_steer_servo(self, value, raw=False):
         """
-        Set the steer servo 
+        Set the steer servo
         value (int): between -10 and 10, -10 being max left, 0 being center, and 10 being max right
-        raw (int): only to be used for TA debugging 
+        raw (int): only to be used for TA debugging
         """
         self._set_servo(PiCar.SERVO_STEER, value, raw)
 
@@ -597,6 +568,7 @@ class PiCar:
             while GPIO.input(self._ultrasonic_echo):
                 pass
             echo_end = time.time()
+
             # compute one way distance in cm from a two way time in seconds
             return (echo_end - echo_start) * 340 * 100 / 2
 
@@ -609,7 +581,6 @@ class PiCar:
             raise SystemExit(
                 "FATAL: get_image can only be called when PiCar is run in threaded mode"
             )
-
         return self._camera_process.get_result()[0]
 
     def get_keyin(self):
@@ -621,7 +592,6 @@ class PiCar:
             raise SystemExit(
                 "FATAL: get_keyin can only be called when PiCar is run in threaded mode"
             )
-
         return self._keyboard_process.get_result()[0]
 
     def __repr__(self):
@@ -672,7 +642,6 @@ class PiCar:
         ]
 
         rep = f"PiCar Version 0.4.15:\n"
-
         col_sizes = compute_column_lengths(entries)
 
         for entry in entries:
@@ -701,12 +670,11 @@ class PiCar:
         rep += f"Trigger Pin: {self._ultrasonic_trigger} Echo Pin: {self._ultrasonic_echo}\n"
         rep += "=====================\n"
         """
-
         return rep
-    
-   # MPU ICM20948
+
+    # MPU ICM20948
     def _bank_select(self, bank):
-    #Switch ICM20948 register bank (0–3)
+        #Switch ICM20948 register bank (0–3)
         REG_BANK_SEL = 0x7F
         self._bus.write_byte_data(self._device_address, REG_BANK_SEL, bank << 4)
 
@@ -723,7 +691,6 @@ class PiCar:
         INT_PIN_CFG = 0x0F
         INT_ENABLE  = 0x10
         I2C_MST_EN  = 0x03   # bit in USER_CTRL to disable I2C master
-
         USER_CTRL   = 0x03
 
         # Step 1 — Wake device, auto-select clock (clears SLEEP bit)
@@ -790,12 +757,14 @@ class PiCar:
 
         # Gyro sample rate ≈ 100 Hz
         self._bus.write_byte_data(self._device_address, GYRO_SMPLRT_DIV, 0x0A)
+
         # Gyro: ±2000 °/s + DLPF enabled
         self._bus.write_byte_data(self._device_address, GYRO_CONFIG_1, 0x19)
 
         # Accel sample rate ≈ 100 Hz
         self._bus.write_byte_data(self._device_address, ACCEL_SMPLRT_DIV,     0x00)
         self._bus.write_byte_data(self._device_address, ACCEL_SMPLRT_DIV + 1, 0x0A)
+
         # Accel: ±2g + DLPF enabled
         self._bus.write_byte_data(self._device_address, ACCEL_CONFIG, 0x01)
 
@@ -881,7 +850,8 @@ class PiCar:
 
             # Fixed sensitivity: 0.15 µT/LSB (AK09916 has no configurable range)
             return value * 0.15   # µT
-            
+
+
 def compute_column_lengths(data):
     lengths = []
     index = 0
@@ -898,5 +868,4 @@ def compute_column_lengths(data):
         max_len = max_len + 4 - (max_len % 4)  # round to nearest tab
         lengths.append(max_len)
         index += 1
-
     return lengths
