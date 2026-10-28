@@ -1,4 +1,3 @@
-
 import RPi.GPIO as GPIO
 import time
 import Adafruit_PCA9685 as PWM_HAT
@@ -12,19 +11,14 @@ import pkg_resources
 import os.path
 import os
 import smbus
-
 GPIO.setwarnings(False)    # Ignore warning for now
-
-
 class PiCar:
     """
     Class to interface with PiCar Hardware
     """
-
     # Global Variables
     PICAR_CONFIG_FILE_NAME = "PICAR_CONFIG.txt"
     MOCK_CAR_CONFIG_FILE_NAME = "MOCK_CAR_CONFIG.txt"
-
     # jdf hack 10/28
     # new car has flipped these
     #SERVO_NOD = 0
@@ -33,7 +27,6 @@ class PiCar:
     SERVO_NOD = 2
     SERVO_SWIVEL = 1
     SERVO_STEER = 0
-
     # Class Variables
     _simulated_hardware = None
     _motor_enable, _motor_pin_1, _motor_pin_2, _motor_pwm = (None, None, None, None)
@@ -53,7 +46,6 @@ class PiCar:
     _camera_process, _ultrasonic_process, _keyboard_process = (None, None, None)
     adc = None
     _bus = smbus.SMBus(1)
-
     def __init__(self, mock_car=True, pins=None, config_name=None, threaded=False):
         """
         Initialize the PiCar Module
@@ -74,9 +66,7 @@ class PiCar:
         else:
             print("PiCar mode set to REAL_CAR")
         self._simulated_hardware = mock_car
-
         GPIO.setmode(GPIO.BCM)
-
         print("configuring pins...")
         if pins is not None and mock_car is True:
             # Validate custom BCM GPIO pins
@@ -93,13 +83,11 @@ class PiCar:
                 print("Custom pins overridden - not allowed when mock_car is False")
             # Real-car motors use PCA9685 PWM channels 12-15.
             pins = (41, 43, 42, 2, 1, 0, 22, 23)
-
         self._init_pins(pins)
         if self._simulated_hardware:
             self._init_mock_car()
         else:
             self._init_car()
-
         self._threaded = threaded
         if self._threaded:
             print("Program is running in THREADED MODE")
@@ -113,10 +101,8 @@ class PiCar:
             self._camera_process   = ParallelTask(ps_image_stream, ((640, 480), 15))
             self._ultrasonic_process = ParallelTask(
                 ps_ultrasonic_dist, (self._ultrasonic_echo, self._ultrasonic_trigger))
-
         # give the camera a bit to wake up
         time.sleep(1)
-
         print("initializing software SPI")
         # Configure MCP3008 software SPI using BCM pin numbering
         gpio_adapter = Adafruit_GPIO_Adapter(GPIO, mode=GPIO.BCM)
@@ -125,11 +111,9 @@ class PiCar:
         miso_pin = 9
         mosi_pin = 10
         cs_pin = 8
-
         self.adc = Adafruit_MCP3008.MCP3008(
             clk=clk_pin, cs=cs_pin, miso=miso_pin, mosi=mosi_pin, gpio=gpio_adapter
         )
-
         print("looking for servo configuration file...")
         if config_name is not None:
             print("config name overridden")
@@ -172,11 +156,9 @@ class PiCar:
                     )
         else:
             print("servo configuration not found, using default values")
-
         print("PiCar configured successfully")
         print(self)
         print("setting motors to default positions...")
-
         # set initial component states
         self.set_motor(0)
         self.set_nod_servo(0)
@@ -198,19 +180,17 @@ class PiCar:
             self._ultrasonic_trigger,
             self._ultrasonic_echo,
         ) = pins
-
         # jdf hack 10/28
         # setup motor pins
         #GPIO.setup(self._motor_enable, GPIO.OUT, initial=GPIO.LOW)
         #GPIO.setup(self._motor_pin_1, GPIO.OUT, initial=GPIO.LOW)
         #GPIO.setup(self._motor_pin_2, GPIO.OUT, initial=GPIO.LOW)
-
         # setup servo pins
         #if self._simulated_hardware:
         #    GPIO.setup(self._servo_nod_pin, GPIO.OUT)
         #    GPIO.setup(self._servo_swivel_pin, GPIO.OUT)
         #    GPIO.setup(self._servo_steer_pin, GPIO.OUT)
-
+        # setup motor pins
         # setup servo pins and motor pins only on simulated hardware
         if self._simulated_hardware:
             GPIO.setup(self._servo_nod_pin, GPIO.OUT)
@@ -219,7 +199,6 @@ class PiCar:
             GPIO.setup(self._motor_enable, GPIO.OUT, initial=GPIO.LOW)
             GPIO.setup(self._motor_pin_1, GPIO.OUT, initial=GPIO.LOW)
             GPIO.setup(self._motor_pin_2, GPIO.OUT, initial=GPIO.LOW)
-
         # setup ultrasonic pins
         GPIO.setup(self._ultrasonic_trigger, GPIO.OUT, initial=GPIO.LOW)
         GPIO.setup(self._ultrasonic_echo, GPIO.IN)
@@ -231,15 +210,12 @@ class PiCar:
         self._servo_nod_pwm = GPIO.PWM(self._servo_nod_pin, 50)
         self._servo_swivel_pwm = GPIO.PWM(self._servo_swivel_pin, 50)
         self._servo_steer_pwm = GPIO.PWM(self._servo_steer_pin, 50)
-
         self.configure_nod_servo_positions(5, 7.5, 10)
         self.configure_swivel_servo_positions(5, 7.5, 10)
         self.configure_steer_servo_positions(5, 7.5, 10)
-
         self._servo_nod_pwm.start(self._servo_nod_middle)
         self._servo_swivel_pwm.start(self._servo_swivel_middle)
         self._servo_steer_pwm.start(self._servo_steer_middle)
-
         self._motor_pwm = GPIO.PWM(self._motor_enable, 1000)
         self._motor_pwm.start(0)
         pass
@@ -249,50 +225,64 @@ class PiCar:
         Initialize car variables for use with the actual Adeept Car
         """
         self._servo_global_pwm = PWM_HAT.PCA9685()
-
         # jdf hack 10/28
         #self._servo_global_pwm.set_pwm_freq(60)
         self._servo_global_pwm.set_pwm_freq(50)
-
         #self._motor_pwm = GPIO.PWM(self._motor_enable, 1000)
         #self._motor_pwm.start(0)
         self._motor_pwm = self._servo_global_pwm
-
         # intialize the IMU20948
         self._MPU_Init()
         pass
-
     def set_motor(self, duty_cycle, forward=True, mode=0,
                   left_duty_cycle=None, right_duty_cycle=None):
-        """
-        Controls left and right motors using PWM channels:
-            Left motor:  12, 13
-            Right motor: 14, 15
+        """Control the motors in mock GPIO mode or real PCA9685 mode.
 
-        Parameters:
-            duty_cycle: Duty cycle (%) for both motors in mode 0
-            forward: True for forward, False for backward
-            mode: 0 = same duty cycle (default)
-                  1 = independent duty cycles
-            left_duty_cycle: Left motor duty cycle (%) in mode 1
-            right_duty_cycle: Right motor duty cycle (%) in mode 1
-        """
+        duty_cycle: duty cycle (%) for both motors in mode 0
+        forward: True for forward; False for reverse
+        mode: 0 = common duty cycle; 1 = independent left/right duty cycles
+        left_duty_cycle, right_duty_cycle: percentages used in mode 1
 
-        # Determine duty cycles
+        Mock mode exposes one GPIO PWM enable and two direction GPIO pins;
+        it cannot independently drive two motors. Real mode uses PCA9685
+        channels 12/13 for the left motor and 14/15 for the right motor.
+        """
         if mode == 0:
-            left_duty_cycle = duty_cycle
-            right_duty_cycle = duty_cycle
+            left_duty_cycle = right_duty_cycle = duty_cycle
         elif mode == 1:
             if left_duty_cycle is None or right_duty_cycle is None:
                 raise ValueError("Specify both duty cycles in mode 1")
         else:
             raise ValueError("mode must be 0 or 1")
 
-        # Convert duty cycle (%) to 12-bit PWM value
-        left_duty = int(max(0, min(100, left_duty_cycle)) * 4095 / 100)
-        right_duty = int(max(0, min(100, right_duty_cycle)) * 4095 / 100)
+        left_percent = max(0, min(100, left_duty_cycle))
+        right_percent = max(0, min(100, right_duty_cycle))
 
-        # Set motor directions and PWM
+        if self._simulated_hardware:
+            # The mock-car GPIO wiring has ONE PWM motor-enable output.
+            if left_percent != right_percent:
+                raise NotImplementedError(
+                    "Independent left/right motor duty cycles require the real "
+                    "PCA9685 motor controller (mock_car=False)."
+                )
+
+            # Disable PWM before changing direction to avoid brief reversals.
+            self._motor_pwm.ChangeDutyCycle(0)
+            if left_percent == 0:
+                GPIO.output(self._motor_pin_1, GPIO.LOW)
+                GPIO.output(self._motor_pin_2, GPIO.LOW)
+            elif forward:
+                GPIO.output(self._motor_pin_1, GPIO.HIGH)
+                GPIO.output(self._motor_pin_2, GPIO.LOW)
+            else:
+                GPIO.output(self._motor_pin_1, GPIO.LOW)
+                GPIO.output(self._motor_pin_2, GPIO.HIGH)
+            self._motor_pwm.ChangeDutyCycle(left_percent)
+            return
+
+        # Real car: PCA9685 expects 12-bit values (0...4095), not percentages.
+        left_duty = int(left_percent * 4095 / 100)
+        right_duty = int(right_percent * 4095 / 100)
         if forward:
             self._motor_pwm.set_pwm(12, 0, 0)
             self._motor_pwm.set_pwm(13, 0, left_duty)
@@ -323,7 +313,6 @@ class PiCar:
         #    self._servo_nod_pwm.stop()
         #    self._servo_swivel_pwm.stop()
         #    self._servo_steer_pwm.stop()
-
         if self._simulated_hardware:
             self._servo_nod_pwm.stop()
             self._servo_swivel_pwm.stop()
@@ -337,12 +326,10 @@ class PiCar:
             self._motor_pwm.set_pwm(13, 0, 0)
             self._motor_pwm.set_pwm(14, 0, 0)
             self._motor_pwm.set_pwm(15, 0, 0)
-
         if self._threaded:      # clean up the threads still active
             self._ultrasonic_process.stop_thread()
             self._camera_process.stop_thread()
             self._keyboard_process.stop_thread()
-
         GPIO.cleanup()
         os.system('reset')
 
@@ -363,7 +350,6 @@ class PiCar:
             raise SystemExit(
                 f"Invalid servo specified to set_servo. Expected one of PiCar.SERVO_NOD, PiCar.SERVO_SWIVEL, PiCar.SERVO_STEER"
             )
-
         # handle special input cases
         if raw:
             if servo == PiCar.SERVO_NOD:
@@ -376,12 +362,10 @@ class PiCar:
                 self._servo_global_pwm.set_pwm(self._servo_steer_pin, 0, raw)
                 self.nod_steer_state = raw
             return
-
         if not (isinstance(value, int) or isinstance(value, float)):
             raise SystemExit(
                 f"value argument must be numeric between -10 and 10. Expected int or float, found {type(value)}"
             )
-
         # cast value to correct range
         safe_value = max(min(10, value), -10)
         if safe_value != value:
@@ -390,10 +374,8 @@ class PiCar:
             )
             print(f"Casting value to {safe_value}")
         value = safe_value
-
         is_left, amount = (value < 0, abs(value))
         duty_cycle = None
-
         if servo == PiCar.SERVO_NOD:
             duty_cycle = self._calc_servo_duty_cycle(
                 self._servo_nod_left,
@@ -418,7 +400,6 @@ class PiCar:
                 amount,
                 is_left,
             )
-
         if self._simulated_hardware:
             if servo == PiCar.SERVO_NOD:
                 self._servo_nod_pwm.ChangeDutyCycle(duty_cycle)
@@ -437,7 +418,6 @@ class PiCar:
                 self._servo_global_pwm.set_pwm(
                     self._servo_steer_pin, 0, int(duty_cycle)
                 )
-
         if servo == PiCar.SERVO_NOD:
             self.nod_servo_state = value
         elif servo == PiCar.SERVO_SWIVEL:
@@ -459,14 +439,12 @@ class PiCar:
             middle = self._servo_nod_middle
         if right is None:
             right = self._servo_nod_right
-
         if False in [
             isinstance(x, int) or isinstance(x, float) for x in (left, middle, right)
         ]:
             raise SystemExit(
                 f"All args must be integer values, expected int, int, int, found: {type(left)}, {type(middle)}, {type(right)}"
             )
-
         print(f"nod : {left} , {middle} , {right}")
         self._servo_nod_left = left
         self._servo_nod_middle = middle
@@ -493,14 +471,12 @@ class PiCar:
             middle = self._servo_swivel_middle
         if right is None:
             right = self._servo_swivel_right
-
         if False in [
             isinstance(x, int) or isinstance(x, float) for x in (left, middle, right)
         ]:
             raise SystemExit(
                 f"All args must be integer values, expected int, int, int, found: {type(left)}, {type(middle)}, {type(right)}"
             )
-
         print(f"swivel : {left} , {middle} , {right}")
         self._servo_swivel_left = left
         self._servo_swivel_middle = middle
@@ -527,14 +503,12 @@ class PiCar:
             middle = self._servo_steer_middle
         if right is None:
             right = self._servo_steer_right
-
         if False in [
             isinstance(x, int) or isinstance(x, float) for x in (left, middle, right)
         ]:
             raise SystemExit(
                 f"All args must be integer values, expected int, int, int, found: {type(left)}, {type(middle)}, {type(right)}"
             )
-
         print(f"steer : {left} , {middle} , {right}")
         self._servo_steer_left = left
         self._servo_steer_middle = middle
@@ -556,11 +530,10 @@ class PiCar:
         if self._threaded:
             return self._ultrasonic_process.get_result()[0]
         else:
-            # activate trigger
+        # activate trigger
             GPIO.output(self._ultrasonic_trigger, GPIO.HIGH)
             time.sleep(0.00001)
             GPIO.output(self._ultrasonic_trigger, GPIO.LOW)
-
             # get send and recieve time
             while not GPIO.input(self._ultrasonic_echo):
                 pass
@@ -568,7 +541,6 @@ class PiCar:
             while GPIO.input(self._ultrasonic_echo):
                 pass
             echo_end = time.time()
-
             # compute one way distance in cm from a two way time in seconds
             return (echo_end - echo_start) * 340 * 100 / 2
 
@@ -640,10 +612,8 @@ class PiCar:
             ["Trigger", self._ultrasonic_trigger],
             ["Echo", self._ultrasonic_echo],
         ]
-
         rep = f"PiCar Version 0.4.15:\n"
         col_sizes = compute_column_lengths(entries)
-
         for entry in entries:
             if len(entry) == 1:
                 rep += "-" * sum(col_sizes)
@@ -656,7 +626,6 @@ class PiCar:
                     rep += str(entry[index])
                     rep += (col_sizes[index] - len(str(entry[index]))) * " "
                 rep += "\n"
-
         rep += "-" * sum(col_sizes)
         """
         rep += "---------------------\n"
@@ -671,54 +640,45 @@ class PiCar:
         rep += "=====================\n"
         """
         return rep
-
     # MPU ICM20948
+
     def _bank_select(self, bank):
-        #Switch ICM20948 register bank (0–3)
+    #Switch ICM20948 register bank (0–3)
         REG_BANK_SEL = 0x7F
         self._bus.write_byte_data(self._device_address, REG_BANK_SEL, bank << 4)
 
     def _MPU_Init(self):
         self._device_address = 0x68   # 0x69 if AD0 pin is HIGH
-
         # ------------------------------------------------------------------ #
         #  Bank 0 — Power on and bypass setup                                 #
         # ------------------------------------------------------------------ #
         self._bank_select(0)
-
         PWR_MGMT_1  = 0x06
         PWR_MGMT_2  = 0x07
         INT_PIN_CFG = 0x0F
         INT_ENABLE  = 0x10
         I2C_MST_EN  = 0x03   # bit in USER_CTRL to disable I2C master
         USER_CTRL   = 0x03
-
         # Step 1 — Wake device, auto-select clock (clears SLEEP bit)
         self._bus.write_byte_data(self._device_address, PWR_MGMT_1, 0x01)
         time.sleep(0.1)
-
         # Step 2 — Enable all accel + gyro axes
         self._bus.write_byte_data(self._device_address, PWR_MGMT_2, 0x00)
         time.sleep(0.05)
-
         # Step 3 — CRITICAL: disable I2C master BEFORE enabling bypass
         # If I2C master is active it "owns" the aux bus and bypass won't work
         self._bus.write_byte_data(self._device_address, USER_CTRL, 0x00)  # I2C_MST_EN = 0
         time.sleep(0.05)
-
         # Step 4 — Enable bypass mode so AK09916 is visible on the main I2C bus
         self._bus.write_byte_data(self._device_address, INT_PIN_CFG, 0x02)  # BYPASS_EN = 1
         time.sleep(0.1)   # longer delay — give the bus time to switch over
-
         # Step 5 — Enable data-ready interrupt
         self._bus.write_byte_data(self._device_address, INT_ENABLE, 0x01)
-
         # ------------------------------------------------------------------ #
         #  Verify AK09916 is reachable before configuring it                  #
         # ------------------------------------------------------------------ #
         AK09916_ADDR = 0x0C
         AK09916_WIA2 = 0x01   # "Who I Am" register — should return 0x09
-
         try:
             who = self._bus.read_byte_data(AK09916_ADDR, AK09916_WIA2)
             if who != 0x09:
@@ -729,52 +689,41 @@ class PiCar:
                 "AK09916 not found on I2C bus. "
                 "Check bypass wiring or confirm AD0 pin level (try address 0x69)."
             ) from e
-
         # ------------------------------------------------------------------ #
         #  Configure AK09916                                                   #
         # ------------------------------------------------------------------ #
         AK09916_CNTL3           = 0x32   # soft reset
         AK09916_CNTL2           = 0x31   # operating mode
         AK09916_CONT_MODE_100HZ = 0x08   # continuous mode 4, 100 Hz
-
         # Soft-reset magnetometer
         self._bus.write_byte_data(AK09916_ADDR, AK09916_CNTL3, 0x01)
         time.sleep(0.1)
-
         # Set continuous measurement at 100 Hz
         self._bus.write_byte_data(AK09916_ADDR, AK09916_CNTL2, AK09916_CONT_MODE_100HZ)
         time.sleep(0.05)
-
         # ------------------------------------------------------------------ #
         #  Bank 2 — Gyroscope and Accelerometer configuration                 #
         # ------------------------------------------------------------------ #
         self._bank_select(2)
-
         GYRO_SMPLRT_DIV  = 0x00
         GYRO_CONFIG_1    = 0x01
         ACCEL_SMPLRT_DIV = 0x10
         ACCEL_CONFIG     = 0x14
-
         # Gyro sample rate ≈ 100 Hz
         self._bus.write_byte_data(self._device_address, GYRO_SMPLRT_DIV, 0x0A)
-
         # Gyro: ±2000 °/s + DLPF enabled
         self._bus.write_byte_data(self._device_address, GYRO_CONFIG_1, 0x19)
-
         # Accel sample rate ≈ 100 Hz
         self._bus.write_byte_data(self._device_address, ACCEL_SMPLRT_DIV,     0x00)
         self._bus.write_byte_data(self._device_address, ACCEL_SMPLRT_DIV + 1, 0x0A)
-
         # Accel: ±2g + DLPF enabled
         self._bus.write_byte_data(self._device_address, ACCEL_CONFIG, 0x01)
-
         # Return to Bank 0 as default
         self._bank_select(0)
 
     def MPU_Read(self, val2read):
         """
         Read a single sensor axis from ICM20948 or AK09916.
-
         val2read:
             1 – accel X  (g)
             2 – accel Y  (g)
@@ -788,32 +737,26 @@ class PiCar:
         """
         if not (1 <= val2read <= 9):
             raise ValueError(f"Invalid val2read: {val2read}. Must be 1–9.")
-
         # ------------------------------------------------------------------ #
         #  Accelerometer / Gyroscope  (ICM20948, Bank 0, big-endian)          #
         # ------------------------------------------------------------------ #
         if val2read <= 6:
             ACCEL_XOUT_H = 0x2D
             GYRO_XOUT_H  = 0x33
-
             self._bank_select(0)
-
             if   val2read == 1: addr = ACCEL_XOUT_H
             elif val2read == 2: addr = ACCEL_XOUT_H + 2
             elif val2read == 3: addr = ACCEL_XOUT_H + 4
             elif val2read == 4: addr = GYRO_XOUT_H
             elif val2read == 5: addr = GYRO_XOUT_H + 2
             elif val2read == 6: addr = GYRO_XOUT_H + 4
-
             # Big-endian: high byte first
             high  = self._bus.read_byte_data(self._device_address, addr)
             low   = self._bus.read_byte_data(self._device_address, addr + 1)
             value = (high << 8) | low
-
             # Two's complement → signed
             if value > 32767:
                 value -= 65536
-
             # Scale using configured full-scale ranges:
             #   Accel ±2g      → 16384 LSB/g
             #   Gyro  ±2000°/s →    16.4 LSB/(°/s)
@@ -821,7 +764,6 @@ class PiCar:
                 return value / 16384.0   # g
             else:
                 return value / 16.4      # °/s
-
         # ------------------------------------------------------------------ #
         #  Magnetometer  (AK09916, address 0x0C, little-endian)               #
         # ------------------------------------------------------------------ #
@@ -831,27 +773,20 @@ class PiCar:
             HYL = 0x13   # Mag Y low byte
             HZL = 0x15   # Mag Z low byte
             ST2 = 0x18   # Status 2 — must be read after data to unlatch next sample
-
             if   val2read == 7: addr = HXL
             elif val2read == 8: addr = HYL
             elif val2read == 9: addr = HZL
-
             # Little-endian: low byte first
             low   = self._bus.read_byte_data(AK09916_ADDR, addr)
             high  = self._bus.read_byte_data(AK09916_ADDR, addr + 1)
             value = (high << 8) | low
-
             # Two's complement → signed
             if value > 32767:
                 value -= 65536
-
             # Read ST2 to release the data latch — required by AK09916 datasheet
             self._bus.read_byte_data(AK09916_ADDR, ST2)
-
             # Fixed sensitivity: 0.15 µT/LSB (AK09916 has no configurable range)
             return value * 0.15   # µT
-
-
 def compute_column_lengths(data):
     lengths = []
     index = 0
