@@ -1,5 +1,5 @@
 # PiCar
-Module to Support ESE205 PiCar Platform
+Module to Support ESE2050 PiCar Platform
 
 The PiCar comes equipped with a variety of sensors. In order to facilitate off-car development, this module provides a wrapper around the code to interact with several key car components. This way, you can test your code with your own hardware before attempting to test it on the car. The following table describes how you should interact with the available sensors:
 
