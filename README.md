@@ -10,16 +10,7 @@ The PiCar comes equipped with a variety of sensors. In order to facilitate off-c
 | Servo(s) | Use PiCar.set_[servo_name]_servo(value) |
 | ADC | Use functions as normal, but use the PiCar.adc variable instead of your own mcp variable |
 | Ultrasonic | Use PiCar.read_distance() |
-| Accelerometer, Gyroscope, Magnetometer | Use PiCar.MPU_Read(x) where x = :|
-            1 – accel X  (g)
-            2 – accel Y  (g)
-            3 – accel Z  (g)
-            4 – gyro  X  (°/s)
-            5 – gyro  Y  (°/s)
-            6 – gyro  Z  (°/s)
-            7 – mag   X  (µT)
-            8 – mag   Y  (µT)
-            9 – mag   Z  (µT)|
+| Accelerometer, Gyroscope, Magnetometer | Use PiCar.MPU_Read(x) where x = 1 – 3 for accel X-Z (g); 4-6 for gyro X-Z (°/s); 7-9 for mag   X-Z  (µT) |
 
 For examples of PiCar.[function_name] interaction, see [Usage](#Usage)
 
