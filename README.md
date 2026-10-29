@@ -189,14 +189,14 @@ While the ADC can be used the same way as you would normally interface with an A
 
 | ADC Channel | Function |
 |---|---|
-| 0 | Photo Resistor |
-| 1 | - |
-| 2 | - |
-| 3 | - |
-| 4 | - |
-| 5 | - |
-| 6 | - |
-| 7 | On/Off Switch |
+| 0 | Left Photo Resistor |
+| 1 | Right Photo Resistor |
+| 2 | Pin 2 (left middle) on connector AD2/3 for motor encoder |
+| 3 | Pin 3 (right middle) on connector AD2/3 for motor encoder |
+| 4 | Pin 2 (left middle) on connector AD4/5 for motor encoder |
+| 5 | Pin 3 (right middle) on connector AD4/5 for motor encoder |
+| 6 | Not connected |
+| 7 | Not connected |
 
 # Hardware Connecton for Simulated Hardware <a name="Hardware_Connection"></a>
 
@@ -333,6 +333,12 @@ Sets the Duty Cycle and Direction of the DC Motor
 
 **forward (bool) (Optional) (Default=True)**: True for forward direction, False for reverse direction
 
+**mode (Optional) (Default=0)**: 0 for same duty cycle, 1 for independent duty cycles of the left and right motors
+
+**left_duty_cycle (Optional) (Default=None)**: duty cycle for left motor in mode=1
+
+**right_duty_cycle (Optional) (Default=None)**: duty cycle for right motor in mode=1
+
 *Examples:*
 
 ```python
@@ -341,6 +347,9 @@ car.set_motor(50)
 
 # set duty cycle to half in reverse direction
 car.set_motor(50, forward=False)
+
+# set different duty cycles for left and right motors
+car.set_motor(50, mode=1,left_duty_cycle =50, right_duty_cycle = 60)
 ```
 ---
 ## stop
@@ -440,16 +449,16 @@ The MCP3008 ADC can be accessed via the PiCar `adc` class variable exactly how y
 car.adc.read_adc(0)
 ```
 ---
-## MPU_6050 accelerometer
+## IMU
 
-The MPU6050 is attached to most cars.  
-NOTE: If you try to run on mock hardware without an MPU6050 attached, the class will not run.
+The ICM20498 is used as the Inertial Movement Unit on board. It has 9-way capability allowing for x, y, and z-axis capture of Acceleration, G-Force, and Magnetic Headings. This device communicates view the I2C bus and has no other external connections
 
 *Examples:*
 
 ```python
 ## 1-xaccel, 2-yaccel, 3-zaccel - in g
 ## 4-xgyro, 5-ygyro, 6-zgyro - in deg/sec
+## 7-xmag, 8-ymag, 9-zmag - in uT
 print(car.MPU_Read(2))   # will print the y acceleration
 ```
 # Contributing
