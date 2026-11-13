@@ -225,10 +225,10 @@ While the ADC can be used the same way as you would normally interface with an A
 | VDD | 16 | 3v3 | 1 |
 | VREF | 15 | 3v3 | 1 |
 | AGND | 14 | GND | 6 |
-| CLK | 13 | SCLK | 40 |
+| CLK | 13 | SCLK | 23 |
 | DOUT | 12 | MISO | 21 |
 | DIN | 11 | MOSI | 19 |
-| CS | 10 | CE1 | 26 |
+| CS | 10 | CE1 | 24 |
 | DGND | 9 | GND | 6 |
 
 ## Ultrasonic
